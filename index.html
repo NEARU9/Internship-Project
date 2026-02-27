@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Aplikasi Data Cuaca</title>
+
+  <!-- DataTables dan Buttons -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css"/>
+  <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css"/>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 0; }
+    nav {
+      display: flex;
+      background-color: #007BFF;
+      padding: 10px;
+    }
+    nav a {
+      color: white;
+      padding: 10px 15px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    nav a.active {
+      background-color: #0056b3;
+      border-radius: 5px;
+    }
+    .tab-content { display: none; padding: 20px; }
+    .tab-content.active { display: block; }
+  </style>
+</head>
+<body>
+
+  <h1 style="padding: 20px;">📊 Aplikasi Data Cuaca</h1>
+
+  <!-- Navigasi -->
+  <nav>
+    <a class="tab-link active" data-tab="perjam">📄 Data Per Jam</a>
+    <a class="tab-link" data-tab="harian">📅 Data Harian</a>
+    <a class="tab-link" data-tab="grafik">📈 Grafik Harian</a>
+  </nav>
+
+  <!-- Form Input Data -->
+  <div class="tab-content active" id="perjam">
+    <form id="cuacaForm">
+      <input type="date" name="tanggal" required />
+      <input type="time" name="jam" required />
+      <input type="number" name="suhu" placeholder="Suhu (°C)" step="0.01" required />
+      <input type="number" name="kelembapan" placeholder="Kelembapan (%)" step="0.01" required />
+      <input type="number" name="tekanan" placeholder="Tekanan Udara (hPa)" step="0.01" />
+      <input type="number" name="kecepatan_angin" placeholder="Kecepatan Angin (m/s)" step="0.01" />
+      <input type="number" name="arah_angin" placeholder="Arah Angin (°)" step="0.01" />
+      <input type="number" name="curah_hujan" placeholder="Curah Hujan (mm)" step="0.01" />
+      <select name="kondisi">
+        <option value="Cerah">Cerah</option>
+        <option value="Berawan">Cerah Berawan</option>
+        <option value="Hujan">Hujan</option>
+        <option value="Hujan Ringan">Hujan Ringan</option>
+        <option value="Hujan Sedang">Hujan Sedang</option>
+        <option value="Hujan Petir">Hujan Petir</option>
+      </select>
+      <button type="submit">➕ Tambah Data</button>
+    </form>
+
+    <table id="tabelCuaca" class="display nowrap" style="width:100%">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Tanggal</th>
+          <th>Jam</th>
+          <th>Suhu (°C)</th>
+          <th>Kelembapan (%)</th>
+          <th>Tekanan (hPa)</th>
+          <th>Kecepatan Angin</th>
+          <th>Arah Angin</th>
+          <th>Curah Hujan</th>
+          <th>Kondisi Cuaca</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- Tab Harian -->
+  <div class="tab-content" id="harian">
+    <table id="tabelCuacaHarian" class="display nowrap" style="width:100%">
+      <thead>
+        <tr>
+          <th>Tanggal</th>
+          <th>Rata-rata Suhu (°C)</th>
+          <th>Rata-rata Kelembapan (%)</th>
+          <th>Rata-rata Tekanan (hPa)</th>
+          <th>Rata-rata Kecepatan Angin</th>
+          <th>Total Curah Hujan (mm)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- Tab Grafik -->
+  <div class="tab-content" id="grafik">
+    <label for="jenisData">Pilih Data yang Ditampilkan:</label>
+    <select id="jenisData">
+      <option value="suhu">Suhu (°C)</option>
+      <option value="kelembapan">Kelembapan (%)</option>
+      <option value="tekanan">Tekanan (hPa)</option>
+      <option value="kecepatan_angin">Kecepatan Angin (m/s)</option>
+      <option value="curah_hujan">Curah Hujan (mm)</option>
+    </select>
+    <canvas id="grafikSuhu" width="1000" height="500"></canvas>
+    <!-- <canvas id="grafikSuhu" width="600" height="300"></canvas> -->
+  </div>
+
+  <!-- CDN Scripts -->
+  <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
+  <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+
+  <script>
+    const labelTanggal = [];
+    const dataCuaca = {
+      suhu: [],
+      kelembapan: [],
+      tekanan: [],
+      kecepatan_angin: [],
+      curah_hujan: []
+    };
+
+    const dataTable = $("#tabelCuaca").DataTable({ dom: 'Bfrtip', buttons: ['csv'] });
+    const tableHarian = $("#tabelCuacaHarian").DataTable({ dom: 'Bfrtip', buttons: ['csv'] });
+
+    let chart;
+    let chartSudahDitampilkan = false;
+
+    fetch("tampil.php")
+      .then(res => res.json())
+      .then(data => {
+        data.data_asli.forEach(row => {
+          dataTable.row.add([
+            row.id, row.tanggal, row.jam, row.suhu, row.kelembapan,
+            row.tekanan, row.kecepatan_angin, row.arah_angin, row.curah_hujan, row.kondisi
+          ]).draw();
+        });
+
+        data.data_harian
+          .sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal))
+          .forEach(row => {
+            labelTanggal.push(row.tanggal);
+            dataCuaca.suhu.push(row.rata_suhu);
+            dataCuaca.kelembapan.push(row.rata_kelembapan);
+            dataCuaca.tekanan.push(row.rata_tekanan);
+            dataCuaca.kecepatan_angin.push(row.rata_kecepatan_angin);
+            dataCuaca.curah_hujan.push(row.total_curah_hujan);
+
+            tableHarian.row.add([
+              row.tanggal,
+              row.rata_suhu,
+              row.rata_kelembapan,
+              row.rata_tekanan,
+              row.rata_kecepatan_angin,
+              row.total_curah_hujan
+            ]).draw();
+          });
+      });
+
+    function tampilkanGrafik(tipe) {
+      const ctx = document.getElementById("grafikSuhu").getContext("2d");
+      if (chart) chart.destroy();
+
+      const warna = {
+        suhu: "rgba(255, 99, 132, 0.6)",
+        kelembapan: "rgba(54, 162, 235, 0.6)",
+        tekanan: "rgba(255, 206, 86, 0.6)",
+        kecepatan_angin: "rgba(75, 192, 192, 0.6)",
+        curah_hujan: "rgba(153, 102, 255, 0.6)"
+      };
+
+      const garis = {
+        suhu: "rgb(255, 99, 132)",
+        kelembapan: "rgb(54, 162, 235)",
+        tekanan: "rgb(255, 206, 86)",
+        kecepatan_angin: "rgb(75, 192, 192)",
+        curah_hujan: "rgb(153, 102, 255)"
+      };
+
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labelTanggal,
+          datasets: [{
+            label: tipe.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
+            data: dataCuaca[tipe],
+            backgroundColor: warna[tipe],
+            borderColor: garis[tipe],
+            borderWidth: 2,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            fill: true,
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            title: {
+              display: true,
+              text: `Grafik ${tipe.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())} Harian`,
+              font: { size: 18 }
+            },
+            legend: {
+              display: true,
+              labels: { font: { size: 14 } }
+            },
+            tooltip: {
+              mode: "index",
+              intersect: false,
+              backgroundColor: "#333",
+              titleColor: "#fff",
+              bodyColor: "#fff"
+            }
+          },
+          interaction: {
+            mode: 'nearest',
+            axis: 'x',
+            intersect: false
+          },
+          scales: {
+            x: {
+              title: { display: true, text: "Tanggal", font: { size: 14 } },
+              ticks: { font: { size: 12 } }
+            },
+            y: {
+              title: { display: true, text: tipe.replace(/_/g, " "), font: { size: 14 } },
+              ticks: { font: { size: 12 } }
+            }
+          }
+        }
+      });
+    }
+
+    // Event dropdown grafik
+    document.getElementById("jenisData").addEventListener("change", function () {
+      tampilkanGrafik(this.value);
+    });
+
+    // Form input data
+    document.getElementById("cuacaForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+
+      fetch("tambah.php", {
+        method: "POST",
+        body: formData
+      })
+      .then(res => res.text())
+      .then(data => {
+        if (data.trim() === "sukses") {
+          alert("Data berhasil ditambahkan!");
+          location.reload();
+        } else {
+          alert("Gagal menyimpan data: " + data);
+        }
+      });
+    });
+
+    // Navigasi tab
+    document.querySelectorAll(".tab-link").forEach(link => {
+      link.addEventListener("click", () => {
+        document.querySelectorAll(".tab-link").forEach(l => l.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+
+        const tabId = link.getAttribute("data-tab");
+        link.classList.add("active");
+        document.getElementById(tabId).classList.add("active");
+
+        if (tabId === "grafik" && !chartSudahDitampilkan) {
+          tampilkanGrafik(document.getElementById("jenisData").value);
+          chartSudahDitampilkan = true;
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>
